@@ -1,9 +1,12 @@
 ﻿@page "/viewer/{Id}/{*Route}"
 @rendermode InteractiveServer
 
+@using FileManagerServer.Components.Dialog
 @using FileManagerServer.Services
 
 @inject IJSRuntime JsRuntime
+@inject IDialogService dialogService
+@inject IToastService toastService
 @inject HttpClient httpClient
 @inject FileManagerService fileManagerService
 @inject NavigationManager navigationManager
@@ -28,7 +31,7 @@
 
 				@if (context.Type == FileSystemType.File)
 				{
-					<FluentButton IconStart="@(new Icons.Regular.Size16.Document())" OnClick="@( async ()=> await DownloadFileFromOpenTabAsync(context))" >
+					<FluentButton IconStart="@(new Icons.Regular.Size16.Document())" OnClick="@( async ()=> await DownloadFileFromOpenTabAsync(context))">
 						@context.Name
 					</FluentButton>
 				}
@@ -53,7 +56,7 @@
 				<FluentButton IconStart="@(new Icons.Regular.Size16.Edit())" OnClick="@(() => Console.WriteLine("Edit clicked"))" />
 				} *@
 				<FluentButton IconStart="@(new Icons.Regular.Size16.ArrowDownload())" OnClick="@( async ()=> await DownloadFileFromOpenTabAsync(context))" />
-				@* <FluentButton IconStart="@(new Icons.Regular.Size16.Delete())" OnClick="@(() => Console.WriteLine("Delete clicked"))" /> *@
+				<FluentButton IconStart="@(new Icons.Regular.Size16.Delete())" OnClick="@( async ()=> await DeleteFileAsync(context))" />
 			</TemplateColumn>
 		</ChildContent>
 	</FluentDataGrid>
@@ -156,10 +159,59 @@
 		await JsRuntime.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
 	}
 
-	private async Task DownloadFileFromOpenTabAsync(FileSystemInfo fileSystemInfo)
+	public void Reload()
+	{
+		navigationManager.NavigateTo(navigationManager.Uri, true);
+	}
+
+	private string GetDownloadUrl(FileSystemInfo fileSystemInfo)
 	{
 		var url = $"{navigationManager.BaseUri}api/v1/FileDownload/{Id}/{Route ?? string.Empty}{fileSystemInfo.Name}";
+		return url;
+	}
+
+	private string GetManagerUrl(FileSystemInfo fileSystemInfo)
+	{
+		var url = $"{navigationManager.BaseUri}api/v1/FileManager/{Id}/{Route ?? string.Empty}{fileSystemInfo.Name}";
+		return url;
+	}
+
+	private async Task DownloadFileFromOpenTabAsync(FileSystemInfo fileSystemInfo)
+	{
+		var url = GetDownloadUrl(fileSystemInfo);
 		await JsRuntime.InvokeVoidAsync("open", url, "_blank");
+	}
+
+	private async Task DeleteFileAsync(FileSystemInfo fileSystemInfo)
+	{
+		var parameters = new DialogParameters<string>()
+			{
+				Title = $"Are you sure you want to delete \"{fileSystemInfo.Name}\"?",
+				PrimaryAction = "Delete",
+				PrimaryActionEnabled = true,
+				SecondaryAction = null,
+				Width = "700px",
+				Height = "250px",
+				Modal = true,
+			};
+		var dialog = await dialogService.ShowDialogAsync<MessageDialog>(
+			"Deleted data cannot be restored.",
+			parameters);
+		DialogResult? result = await dialog.Result;
+		if (result != null && !result.Cancelled)
+		{
+			var url = GetManagerUrl(fileSystemInfo);
+			var response = await httpClient.DeleteAsync(url);
+			if (response.IsSuccessStatusCode)
+			{
+				toastService.ShowInfo($"Delete Success.");
+			}
+			else
+			{
+				toastService.ShowError($"Delete Fail.[{response.StatusCode}]");
+			}
+			navigationManager.Refresh(true);
+		}
 	}
 
 }

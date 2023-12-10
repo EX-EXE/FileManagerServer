@@ -1,0 +1,8 @@
+﻿@implements IDialogContentComponent<string>
+
+<p>@Content</p>
+
+@code {
+    [Parameter]
+    public string Content { get; set; } = string.Empty;
+}
