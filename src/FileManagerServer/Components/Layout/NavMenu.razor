@@ -1,0 +1,20 @@
+﻿@using FileManagerServer.Services
+
+@rendermode InteractiveServer
+
+@inject FileManagerService fileManagerService
+
+<nav>
+    <FluentNavMenu Width="250" Collapsible="true" Title="Custom navigation menu">
+        <FluentNavLink Href="/" Match="NavLinkMatch.All" Icon="new Icons.Regular.Size24.Home()" IconColor="Color.Accent">Home</FluentNavLink>
+        
+		@foreach (var id in fileManagerService.GetIds())
+		{
+			<FluentNavLink Href=@($"/viewer/{id}/") IconColor="Color.Accent">@id</FluentNavLink>
+		}
+    </FluentNavMenu>
+</nav>
+
+
+@code {
+}

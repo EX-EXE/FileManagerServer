@@ -1,0 +1,165 @@
+﻿@page "/viewer/{Id}/{*Route}"
+@rendermode InteractiveServer
+
+@using FileManagerServer.Services
+
+@inject IJSRuntime JsRuntime
+@inject HttpClient httpClient
+@inject FileManagerService fileManagerService
+@inject NavigationManager navigationManager
+
+<PageScript Src="./Components/Pages/Viewer.razor.js" />
+
+<h3>@Id</h3>
+
+<FluentBreadcrumb>
+	@foreach (var item in Breadcrumbs)
+	{
+		<FluentBreadcrumbItem Href=@item.Href>
+			@item.Name
+		</FluentBreadcrumbItem>
+	}
+</FluentBreadcrumb>
+
+<div style="height: 90vh; overflow-y: scroll;">
+	<FluentDataGrid Items=@Items Virtualize="true" ResizableColumns=true TGridItem="FileSystemInfo" GenerateHeader="GenerateHeaderOption.Sticky" GridTemplateColumns="1fr 200px 175px 175px 150px">
+		<ChildContent>
+			<TemplateColumn Align="Align.Start" SortBy="sortByName" Title="Name">
+
+				@if (context.Type == FileSystemType.File)
+				{
+					<FluentButton IconStart="@(new Icons.Regular.Size16.Document())" OnClick="@( async ()=> await DownloadFileFromOpenTabAsync(context))" >
+						@context.Name
+					</FluentButton>
+				}
+				else if (context.Type == FileSystemType.Directory)
+				{
+					<FluentButton IconStart="@(new Icons.Regular.Size16.Folder())" OnClick="@(() => navigationManager.NavigateTo($"{navigationManager.Uri}{context.Name}/"))">
+						@context.Name
+					</FluentButton>
+				}
+			</TemplateColumn>
+
+			<TemplateColumn Align="Align.End" SortBy="sortByFileSize" Title="FileSize">
+				@(ConvertByteUnit(context.FileSize))
+			</TemplateColumn>
+
+			<PropertyColumn Property="@(info => info.CreationTime)" Format="yyyy/MM/dd HH:mm:ss" Align="Align.Start" Sortable="true" />
+			<PropertyColumn Property="@(info => info.LastWriteTime)" Format="yyyy/MM/dd HH:mm:ss" Align="Align.Start" Sortable="true" />
+
+			<TemplateColumn Title="Actions" Align="@Align.End">
+				@* @if (context.Type == FileSystemType.File)
+				{
+				<FluentButton IconStart="@(new Icons.Regular.Size16.Edit())" OnClick="@(() => Console.WriteLine("Edit clicked"))" />
+				} *@
+				<FluentButton IconStart="@(new Icons.Regular.Size16.ArrowDownload())" OnClick="@( async ()=> await DownloadFileFromOpenTabAsync(context))" />
+				@* <FluentButton IconStart="@(new Icons.Regular.Size16.Delete())" OnClick="@(() => Console.WriteLine("Delete clicked"))" /> *@
+			</TemplateColumn>
+		</ChildContent>
+	</FluentDataGrid>
+</div>
+
+@code
+{
+	[Parameter]
+	public string Id { get; set; } = string.Empty;
+
+	[Parameter]
+	public string? Route { get; set; } = string.Empty;
+
+	GridSort<FileSystemInfo> sortByName = GridSort<FileSystemInfo>
+		.ByAscending(p => p.Name);
+	GridSort<FileSystemInfo> sortByType = GridSort<FileSystemInfo>
+		.ByAscending(p => p.Type);
+	GridSort<FileSystemInfo> sortByFileSize = GridSort<FileSystemInfo>
+		.ByAscending(p => p.FileSize);
+
+	public class BreadcrumbItem
+	{
+		public string Href { get; set; } = string.Empty;
+		public string Name { get; set; } = string.Empty;
+	}
+
+	public BreadcrumbItem[] Breadcrumbs { get; set; } = [];
+	public IQueryable<FileSystemInfo> Items { get; set; } = Array.Empty<FileSystemInfo>().AsQueryable();
+
+	protected override void OnInitialized()
+	{
+		// Item
+		Items = fileManagerService.GetDirectoryInfos(Id, Route ?? string.Empty).AsQueryable();
+
+		// Breadcrumbs
+		var splitRoute = string.IsNullOrEmpty(Route)
+			? []
+			: Route.Split("/", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+		var path = $"/viewer/{Id}/";
+		var list = new List<BreadcrumbItem>();
+		list.Add(new BreadcrumbItem()
+			{
+				Href = path,
+				Name = "/"
+			});
+		foreach (var item in splitRoute)
+		{
+			path += $"{item}/";
+			list.Add(new BreadcrumbItem()
+				{
+					Href = path,
+					Name = item
+				});
+		}
+		Breadcrumbs = list.ToArray();
+		base.OnInitialized();
+	}
+
+	private string ConvertByteUnit(long length)
+	{
+		if (length < 0)
+		{
+			return string.Empty;
+		}
+
+		if (length < 1024)
+		{
+			return $"{length:F2}   B";
+		}
+		else if (length < 1024 * 1024)
+		{
+			return $"{length / 1024.0:F2} KiB";
+		}
+		else if (length < 1024 * 1024 * 1024)
+		{
+			return $"{length / 1024.0 / 1024.0:F2} MiB";
+		}
+		return $"{length / 1024.0 / 1024.0 / 1024.0:F2} GiB";
+	}
+
+
+	private Stream GetFileStream()
+	{
+		var binaryData = new byte[50 * 1024];
+		var fileStream = new MemoryStream(binaryData);
+		return fileStream;
+	}
+
+	private async Task DownloadFileFromStream(FileSystemInfo fileSystemInfo)
+	{
+		var fileName = fileSystemInfo.Type == FileSystemType.File
+			? fileSystemInfo.Name
+			: $"{fileSystemInfo.Name}.zip";
+		//var fileStream = GetFileStream();
+
+		var url = $"{navigationManager.BaseUri}api/v1/FileDownload/{Id}/{Route ?? string.Empty}{fileSystemInfo.Name}";
+		var stream = await httpClient.GetStreamAsync(url);
+		using var streamRef = new DotNetStreamReference(stream: stream);
+		await JsRuntime.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+	}
+
+	private async Task DownloadFileFromOpenTabAsync(FileSystemInfo fileSystemInfo)
+	{
+		var url = $"{navigationManager.BaseUri}api/v1/FileDownload/{Id}/{Route ?? string.Empty}{fileSystemInfo.Name}";
+		await JsRuntime.InvokeVoidAsync("open", url, "_blank");
+	}
+
+}
